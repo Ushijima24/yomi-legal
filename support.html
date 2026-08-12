@@ -8,12 +8,11 @@
   </head>
   <body>
     <main class="legal">
-      <p><a href="./index.html">← YOMI に戻る</a></p>
       <h1>サポート</h1>
-      <p class="meta">運営: <span data-publisher></span></p>
+      <p class="meta">運営: 多賀友哉（YUYA TAGA）</p>
 
       <p>不具合・課金・アカウントに関するお問い合わせは、下記メールまでご連絡ください。</p>
-      <p><a data-email class="big" href="mailto:"></a></p>
+      <p><a class="big" href="mailto:usopperman@gmail.com">usopperman@gmail.com</a></p>
 
       <h2>よくあること</h2>
       <ul>
@@ -27,15 +26,5 @@
         <a href="./terms.html">利用規約</a>
       </p>
     </main>
-    <script type="module">
-      import { PUBLISHER } from './js/storeConfig.js';
-      document.querySelectorAll('[data-publisher]').forEach((el) => {
-        el.textContent = PUBLISHER.displayName;
-      });
-      document.querySelectorAll('[data-email]').forEach((el) => {
-        el.textContent = PUBLISHER.supportEmail;
-        el.setAttribute('href', `mailto:${PUBLISHER.supportEmail}`);
-      });
-    </script>
   </body>
 </html>

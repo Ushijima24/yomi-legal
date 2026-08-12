@@ -8,9 +8,9 @@
   </head>
   <body>
     <main class="legal">
-      <p><a href="./index.html">← YOMI に戻る</a></p>
+      <p><a href="./support.html">← サポートへ</a></p>
       <h1>利用規約</h1>
-      <p class="meta">最終更新: 2026-08-13 ／ 運営: <span data-publisher></span></p>
+      <p class="meta">最終更新: 2026-08-13 ／ 運営: 多賀友哉（YUYA TAGA）</p>
 
       <h2>1. サービス内容</h2>
       <p>
@@ -40,17 +40,7 @@
       <p>本アプリは17歳以上を対象とします。対象年齢に満たない方はご利用いただけません。</p>
 
       <h2>6. お問い合わせ</h2>
-      <p><a data-email href="mailto:"></a></p>
+      <p><a href="mailto:usopperman@gmail.com">usopperman@gmail.com</a></p>
     </main>
-    <script type="module">
-      import { PUBLISHER } from './js/storeConfig.js';
-      document.querySelectorAll('[data-publisher]').forEach((el) => {
-        el.textContent = PUBLISHER.displayName;
-      });
-      document.querySelectorAll('[data-email]').forEach((el) => {
-        el.textContent = PUBLISHER.supportEmail;
-        el.setAttribute('href', `mailto:${PUBLISHER.supportEmail}`);
-      });
-    </script>
   </body>
 </html>
