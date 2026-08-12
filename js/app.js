@@ -1,4 +1,4 @@
-import { RANKS, SUITS, SUIT_SYMBOLS, SUIT_COLORS, makeCard, cardCode } from './cards.js';
+import { RANKS, SUITS, SUIT_SYMBOLS, SUIT_COLORS, makeCard, cardCode, cardLabel } from './cards.js';
 import { calculateEquity } from './equity.js';
 import { estimateRange, formatHandList, LINE_LABEL, HAND_STRENGTH, combosFromHands, sortHandsByStrength } from './range.js';
 import { equityVsRange, decideAction, buildRaisePlan } from './decision.js';
@@ -55,15 +55,19 @@ function renderCardFace(card, emptyLabel = '') {
 }
 
 function renderPicker(el, used, onPick) {
+  el.classList.add('picker');
+  // スートは左ラベルのみ。ボタンはランクだけにして枠に収める
   el.innerHTML = SUITS.map((suit, s) => {
     const color = SUIT_COLORS[suit];
     return `<div class="picker__row picker__row--${color}">
-      <span class="picker__suit">${SUIT_SYMBOLS[suit]}</span>
+      <span class="picker__suit" aria-hidden="true">${SUIT_SYMBOLS[suit]}</span>
+      <div class="picker__cards">
       ${RANKS.map((rank, r) => {
         const id = s * 13 + r;
         const disabled = used.has(id);
-        return `<button type="button" class="picker__card card--${color}" data-rank="${r}" data-suit="${s}" ${disabled ? 'disabled' : ''}>${rank}${SUIT_SYMBOLS[suit]}</button>`;
+        return `<button type="button" class="picker__card card--${color}" title="${rank}${SUIT_SYMBOLS[suit]}" aria-label="${rank}${SUIT_SYMBOLS[suit]}" data-rank="${r}" data-suit="${s}" ${disabled ? 'disabled' : ''}>${rank}</button>`;
       }).join('')}
+      </div>
     </div>`;
   }).join('');
 
@@ -72,6 +76,19 @@ function renderPicker(el, used, onPick) {
     if (!btn || btn.disabled) return;
     onPick(Number(btn.dataset.rank), Number(btn.dataset.suit));
   };
+}
+
+/** 未使用カードから1枚ランダム */
+function pickRandomCard(used) {
+  const pool = [];
+  for (let s = 0; s < 4; s++) {
+    for (let r = 0; r < 13; r++) {
+      const c = makeCard(r, s);
+      if (!used.has(c.id)) pool.push(c);
+    }
+  }
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function formatPct(x) {
@@ -157,7 +174,8 @@ function eqRenderBoard() {
 function eqPlayerLabel(p) {
   if (p === 0) return '自分';
   if (eq.playerCount === 2) return '相手';
-  return `相手${p}`;
+  const full = String(p).replace(/\d/g, (d) => '０１２３４５６７８９'[Number(d)]);
+  return `相手${full}`;
 }
 
 function eqRenderPlayers() {
@@ -304,7 +322,7 @@ async function eqCalculate() {
       full.equity[pi] = partial.equity[j];
     });
     eq.results = full;
-    eqSetStatus(`シミュレーション ${partial.iterations.toLocaleString()} 回`);
+    eqSetStatus('計算完了');
     eqRender();
     void maybeShowAdAfterCalc().then(() => updateAdHint());
   } catch (err) {
@@ -322,6 +340,103 @@ function eqReset() {
   eq.results = null;
   eqSetStatus('カードを選んでください');
   eqRender();
+}
+
+/** 自分・相手など穴札が2人分以上揃っているか */
+function eqHoleCardsReady() {
+  return eq.hands.filter((h) => h[0] && h[1]).length >= 2;
+}
+
+/** 配布直後など：穴札が揃っていれば自動計算（計算中なら完了後に再実行／広告カウント含む） */
+function eqMaybeAutoCalculate() {
+  if (!eqHoleCardsReady()) return;
+  const tryRun = () => {
+    if (!eqHoleCardsReady()) return;
+    if (eq.busy) {
+      setTimeout(tryRun, 40);
+      return;
+    }
+    void eqCalculate();
+  };
+  // 描画を先に反映してから計算
+  setTimeout(tryRun, 0);
+}
+
+/** フロップ3枚をまとめて生成（ターン・リバーはクリア） */
+function eqDealFlopThree() {
+  eq.board[0] = null;
+  eq.board[1] = null;
+  eq.board[2] = null;
+  eq.board[3] = null;
+  eq.board[4] = null;
+  const used = eqUsed();
+  const dealt = [];
+  for (let i = 0; i < 3; i++) {
+    const c = pickRandomCard(used);
+    if (!c) {
+      eqSetStatus('残りのカードがありません', true);
+      eqRender();
+      return;
+    }
+    eq.board[i] = c;
+    used.add(c.id);
+    dealt.push(cardLabel(c));
+  }
+  eq.results = null;
+  eq.activeSlot = { type: 'board', index: 3 };
+  eqSetStatus(`フロップ ${dealt.join(' ')}`);
+  eqRender();
+  eqMaybeAutoCalculate();
+}
+
+/** ターン（3）に1枚。フロップ完成が条件 */
+function eqDealTurnOne() {
+  if (!eq.board[0] || !eq.board[1] || !eq.board[2]) {
+    eqSetStatus('先にフロップを3枚揃えてください', true);
+    return;
+  }
+  if (eq.board[3]) {
+    eqSetStatus('ターンはすでに配られています', true);
+    return;
+  }
+  const c = pickRandomCard(eqUsed());
+  if (!c) {
+    eqSetStatus('残りのカードがありません', true);
+    return;
+  }
+  eq.board[3] = c;
+  eq.results = null;
+  eq.activeSlot = { type: 'board', index: 4 };
+  eqSetStatus(`ターンに ${cardLabel(c)} を配布`);
+  eqRender();
+  eqMaybeAutoCalculate();
+}
+
+/** リバー（4）に1枚。ターン完成が条件 */
+function eqDealRiverOne() {
+  if (!eq.board[0] || !eq.board[1] || !eq.board[2]) {
+    eqSetStatus('先にフロップを3枚揃えてください', true);
+    return;
+  }
+  if (!eq.board[3]) {
+    eqSetStatus('先にターンを配ってください', true);
+    return;
+  }
+  if (eq.board[4]) {
+    eqSetStatus('リバーはすでに配られています', true);
+    return;
+  }
+  const c = pickRandomCard(eqUsed());
+  if (!c) {
+    eqSetStatus('残りのカードがありません', true);
+    return;
+  }
+  eq.board[4] = c;
+  eq.results = null;
+  eq.activeSlot = null;
+  eqSetStatus(`リバーに ${cardLabel(c)} を配布`);
+  eqRender();
+  eqMaybeAutoCalculate();
 }
 
 eqEls.board.addEventListener('click', (e) => {
@@ -351,6 +466,9 @@ eqEls.players.addEventListener('click', (e) => {
 
 eqEls.calculate.addEventListener('click', () => eqCalculate());
 eqEls.reset.addEventListener('click', () => eqReset());
+document.getElementById('btn-eq-deal-flop')?.addEventListener('click', () => eqDealFlopThree());
+document.getElementById('btn-eq-deal-turn')?.addEventListener('click', () => eqDealTurnOne());
+document.getElementById('btn-eq-deal-river')?.addEventListener('click', () => eqDealRiverOne());
 eqEls.addPlayer.addEventListener('click', () => {
   if (!isPro() && eq.playerCount >= 2) {
     openPaywall();
@@ -401,6 +519,7 @@ const advEls = {
   sizeButtons: document.getElementById('adv-size-buttons'),
   sizeSummary: document.getElementById('adv-size-summary'),
   players: document.getElementById('adv-players'),
+  tableTend: document.getElementById('adv-table-tend'),
   heroPos: document.getElementById('adv-hero-pos'),
   villainPos: document.getElementById('adv-villain-pos'),
   villainName: document.getElementById('adv-villain-name'),
@@ -470,12 +589,14 @@ function resolveSituation() {
   let villainPos = advEls.villainPos.value;
   let style = advEls.style.value;
   let line = advEls.line.value;
+  let tableTend = advEls.tableTend?.value || d.tableTend;
 
   if (!pro) {
     heroPos = 'auto';
     villainPos = 'auto';
     style = 'auto';
     line = 'auto';
+    tableTend = 'auto';
   }
 
   if (!heroPos || heroPos === 'auto') heroPos = defaultHeroPos(players);
@@ -490,8 +611,22 @@ function resolveSituation() {
 
   if (!style || style === 'auto') style = d.style;
   if (!line || line === 'auto') line = d.line;
+  if (!tableTend || tableTend === 'auto') tableTend = d.tableTend;
 
-  return { players, pot, bet, potBase, sizeKey, sizeLabel, heroPos, villainPos, style, line, pro };
+  return {
+    players,
+    pot,
+    bet,
+    potBase,
+    sizeKey,
+    sizeLabel,
+    heroPos,
+    villainPos,
+    style,
+    line,
+    tableTend,
+    pro,
+  };
 }
 
 function renderSizeButtons() {
@@ -517,14 +652,20 @@ function advUpdateOddsHint() {
   const frac = s.bet / potBefore;
   const req = s.bet / (s.pot + s.bet);
   const usedDefaults =
-    !advEls.potBase?.value ||
-    advEls.players.value === '' ||
     advEls.heroPos.value === 'auto' ||
     advEls.villainPos.value === 'auto' ||
     advEls.style.value === 'auto' ||
-    advEls.line.value === 'auto';
+    advEls.line.value === 'auto' ||
+    (advEls.tableTend && advEls.tableTend.value === 'auto');
 
   syncSizeSummary();
+
+  if (!s.pro) {
+    advEls.oddsHint.textContent =
+      `${s.sizeLabel}（約${(frac * 100).toFixed(0)}%）→ 必要勝率 ${formatPct(req)}` +
+      (!adv.customPot ? '（一般値あり）' : '');
+    return;
+  }
 
   advEls.oddsHint.textContent =
     `${s.players}人 · ${s.sizeLabel}（約${(frac * 100).toFixed(0)}%）→ 必要勝率 ${formatPct(req)}` +
@@ -705,7 +846,7 @@ async function fillEstimateIntoEditor() {
     rangeSetStatus('推定には「アクション診断」で自分のハンドを入れてください', true);
     return;
   }
-  const { players, pot, bet, heroPos, villainPos, style, line, pro } = resolveSituation();
+  const { players, pot, bet, heroPos, villainPos, style, line, tableTend, pro } = resolveSituation();
   const potBefore = Math.max(1, pot - bet);
   const betFraction = bet / potBefore;
   const dead = advUsed();
@@ -717,7 +858,11 @@ async function fillEstimateIntoEditor() {
     posStrengthBias: villainPosStrengthBias(villainPos, players),
     heroIP: posAdj.heroIP,
     posNote: 'estimate',
-  });
+    players,
+    villainPos,
+    betFraction,
+    tableTend,
+  }, adv.board.slice());
   adv.lastEstimateHands = range.hands.slice();
   setSelectedHands(range.hands);
   if (advEls.profileSelect) advEls.profileSelect.value = '__draft__';
@@ -734,7 +879,7 @@ function groupHands(byHand) {
 
 async function advRun() {
   if (adv.busy) return;
-  const { pot, bet, players, heroPos, villainPos, style, line, pro } = resolveSituation();
+  const { pot, bet, players, heroPos, villainPos, style, line, tableTend, pro } = resolveSituation();
   const wantRaise = pro && advEls.raise.checked;
 
   if (!adv.hero[0] || !adv.hero[1]) {
@@ -775,7 +920,11 @@ async function advRun() {
       posStrengthBias: pro ? villainPosStrengthBias(villainPos, players) : 0.3,
       heroIP: posAdj.heroIP,
       posNote: pro ? `${players}人 ${formatSeatLabel(villainPos, players)}` : '一般',
-    });
+      players,
+      villainPos: pro ? villainPos : 'CO',
+      betFraction,
+      tableTend: pro ? tableTend : 'mid',
+    }, adv.board.slice());
     adv.lastEstimateHands = estimated.hands.slice();
 
     let range = estimated;
@@ -831,8 +980,9 @@ async function advRun() {
       ? `レイズ案: ${decision.raiseNote.raiseTo} まで（フォールド期待 ${formatPct(decision.raiseNote.foldEquity)} / コール時エクイティ ${formatPct(decision.raiseNote.equityWhenCalled)}）`
       : '';
 
+    const tableTendJP = { tight: 'タイト卓', mid: '普通卓', loose: 'ルース卓' }[tableTend] || '普通卓';
     const posSummary = pro
-      ? `${players}人卓 · 自分 ${formatSeatLabel(heroPos, players)} / 相手 ${formatSeatLabel(villainPos, players)} · ${posAdj.label}`
+      ? `${players}人卓 · ${tableTendJP} · 自分 ${formatSeatLabel(heroPos, players)} / 相手 ${formatSeatLabel(villainPos, players)} · ${posAdj.label}`
       : `一般スポット（Free）· ポット${pot} / コール${bet}`;
 
     const detailHtml = pro
@@ -863,13 +1013,14 @@ async function advRun() {
         必要勝率 ${formatPct(decision.requiredEquity)} に対し、勝率（エクイティ）は ${formatPct(adjEquity)}
         （単独勝ち ${formatPct(vs.win)} / 差 ${formatPct(decision.edge)}）。
         相手: ${LINE_LABEL[line] ?? line} · レンジ: ${rangeSource}。${range.label}。
+        ${range.mix ? `コールEVはブラフ込みレンジで算出（目標ブラフ比率 約${Math.round((range.bluffTarget || 0) * 100)}%）。` : ''}
         ${raiseLine}
       </p>
       <div class="metrics">
         <div class="metric"><b class="metric__win">${formatPct(adjWin)}</b><span>勝率</span></div>
         <div class="metric"><b>${formatPct(decision.requiredEquity)}</b><span>必要勝率</span></div>
         <div class="metric"><b>${vs.comboCount}</b><span>相手コンボ数</span></div>
-        <div class="metric"><b>${pro ? 'Pro' : 'Free'}</b><span>プラン</span></div>
+        <div class="metric"><b>${range.mix ? formatPct(range.mix.bluffPct) : (pro ? 'Pro' : 'Free')}</b><span>${range.mix ? '推定ブラフ比率' : 'プラン'}</span></div>
       </div>
       <ul class="ev-list">
         ${decision.options
@@ -887,7 +1038,7 @@ async function advRun() {
     `;
 
     document.getElementById('btn-upgrade-result')?.addEventListener('click', openPaywall);
-    advSetStatus(`完了 · ${vs.iterations.toLocaleString()} 回シミュ`);
+    advSetStatus('計算完了');
     void maybeShowAdAfterCalc().then(() => updateAdHint());
   } catch (err) {
     advSetStatus(err.message || String(err), true);
@@ -904,6 +1055,91 @@ function advReset() {
   advEls.result.hidden = true;
   advSetStatus('カードと状況を入力してください');
   advRenderSlots();
+}
+
+/** 配布直後など：ヒーローが揃っていれば自動診断（計算中なら完了後に再実行／広告カウント含む） */
+function advMaybeAutoRun() {
+  if (!adv.hero[0] || !adv.hero[1]) return;
+  const tryRun = () => {
+    if (!adv.hero[0] || !adv.hero[1]) return;
+    if (adv.busy) {
+      setTimeout(tryRun, 40);
+      return;
+    }
+    void advRun();
+  };
+  setTimeout(tryRun, 0);
+}
+
+function advDealFlopThree() {
+  adv.board[0] = null;
+  adv.board[1] = null;
+  adv.board[2] = null;
+  adv.board[3] = null;
+  adv.board[4] = null;
+  const used = advUsed();
+  const dealt = [];
+  for (let i = 0; i < 3; i++) {
+    const c = pickRandomCard(used);
+    if (!c) {
+      advSetStatus('残りのカードがありません', true);
+      advRenderSlots();
+      return;
+    }
+    adv.board[i] = c;
+    used.add(c.id);
+    dealt.push(cardLabel(c));
+  }
+  adv.activeSlot = { type: 'board', index: 3 };
+  advSetStatus(`フロップ ${dealt.join(' ')}`);
+  advRenderSlots();
+  advMaybeAutoRun();
+}
+
+function advDealTurnOne() {
+  if (!adv.board[0] || !adv.board[1] || !adv.board[2]) {
+    advSetStatus('先にフロップを3枚揃えてください', true);
+    return;
+  }
+  if (adv.board[3]) {
+    advSetStatus('ターンはすでに配られています', true);
+    return;
+  }
+  const c = pickRandomCard(advUsed());
+  if (!c) {
+    advSetStatus('残りのカードがありません', true);
+    return;
+  }
+  adv.board[3] = c;
+  adv.activeSlot = { type: 'board', index: 4 };
+  advSetStatus(`ターンに ${cardLabel(c)} を配布`);
+  advRenderSlots();
+  advMaybeAutoRun();
+}
+
+function advDealRiverOne() {
+  if (!adv.board[0] || !adv.board[1] || !adv.board[2]) {
+    advSetStatus('先にフロップを3枚揃えてください', true);
+    return;
+  }
+  if (!adv.board[3]) {
+    advSetStatus('先にターンを配ってください', true);
+    return;
+  }
+  if (adv.board[4]) {
+    advSetStatus('リバーはすでに配られています', true);
+    return;
+  }
+  const c = pickRandomCard(advUsed());
+  if (!c) {
+    advSetStatus('残りのカードがありません', true);
+    return;
+  }
+  adv.board[4] = c;
+  adv.activeSlot = null;
+  advSetStatus(`リバーに ${cardLabel(c)} を配布`);
+  advRenderSlots();
+  advMaybeAutoRun();
 }
 
 advEls.hero.addEventListener('click', (e) => {
@@ -930,10 +1166,9 @@ advEls.board.addEventListener('click', (e) => {
 
 advEls.run.addEventListener('click', () => advRun());
 advEls.reset.addEventListener('click', () => advReset());
-advEls.potBase?.addEventListener('input', () => {
-  adv.customPot = false;
-  advUpdateOddsHint();
-});
+document.getElementById('btn-adv-deal-flop')?.addEventListener('click', () => advDealFlopThree());
+document.getElementById('btn-adv-deal-turn')?.addEventListener('click', () => advDealTurnOne());
+document.getElementById('btn-adv-deal-river')?.addEventListener('click', () => advDealRiverOne());
 advEls.sizeButtons?.addEventListener('click', (e) => {
   const btn = e.target.closest('.size-btn');
   if (!btn) return;
@@ -955,6 +1190,7 @@ advEls.heroPos.addEventListener('change', advUpdateOddsHint);
 advEls.villainPos.addEventListener('change', advUpdateOddsHint);
 advEls.style.addEventListener('change', advUpdateOddsHint);
 advEls.line.addEventListener('change', advUpdateOddsHint);
+advEls.tableTend?.addEventListener('change', advUpdateOddsHint);
 
 advEls.rangeGrid?.addEventListener('click', (e) => {
   if (!isPro()) {
@@ -973,6 +1209,18 @@ advEls.rangeGrid?.addEventListener('click', (e) => {
 
 document.getElementById('btn-range-from-estimate')?.addEventListener('click', () => {
   void fillEstimateIntoEditor();
+});
+
+document.getElementById('btn-range-all')?.addEventListener('click', () => {
+  if (!isPro()) {
+    openPaywall();
+    return;
+  }
+  setSelectedHands(HAND_STRENGTH.slice());
+  if (advEls.rangeProfileSelect) advEls.rangeProfileSelect.value = '';
+  updateAdvRangeHint();
+  refreshProfileSelect();
+  rangeSetStatus(`全${HAND_STRENGTH.length}ハンドを選択しました`);
 });
 
 document.getElementById('btn-range-clear')?.addEventListener('click', () => {
@@ -1136,6 +1384,12 @@ function applyPlanUI() {
   if (freeBanner) freeBanner.hidden = pro;
   if (rangeFreeBanner) rangeFreeBanner.hidden = pro;
 
+  const villainDetails = document.getElementById('adv-villain-details');
+  if (villainDetails) {
+    // Freeは閉じた状態、Proは開いておく
+    villainDetails.open = pro;
+  }
+
   document.querySelectorAll('[data-pro-field]').forEach((el) => {
     el.classList.toggle('is-locked', !pro);
   });
@@ -1145,6 +1399,7 @@ function applyPlanUI() {
     advEls.villainPos.value = 'auto';
     advEls.style.value = 'auto';
     advEls.line.value = 'auto';
+    if (advEls.tableTend) advEls.tableTend.value = 'auto';
     advEls.raise.checked = false;
     if (advEls.profileSelect) advEls.profileSelect.value = '';
     if (eq.playerCount > 2) {

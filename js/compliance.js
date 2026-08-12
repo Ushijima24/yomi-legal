@@ -1,4 +1,4 @@
-import { APP_STORE_BUILD, APP, PUBLISHER, LEGAL, IAP } from './storeConfig.js';
+import { APP_STORE_BUILD, APP, PUBLISHER, LEGAL, IAP, ALLOW_TEST_PRO } from './storeConfig.js';
 import { unlockPro, isPro, setPlan, PLAN } from './premium.js';
 
 const AGE_KEY = 'yomi_age_ok_v1';
@@ -13,7 +13,7 @@ export function applyPublisherUi() {
 
   const copy = document.getElementById('legal-copy');
   if (copy) {
-    copy.textContent = `© ${PUBLISHER.copyrightYear} ${PUBLISHER.displayName}. ${APP.name} v${APP.version}`;
+    copy.textContent = `© ${PUBLISHER.copyrightYear} ${PUBLISHER.brandCredit || APP.name}. v${APP.version}`;
   }
 
   const ageText = document.getElementById('age-gate-text');
@@ -77,9 +77,14 @@ export function redeemInviteForStore(raw) {
  * 購入（本番は StoreKit）。審査用ビルドでは説明のみ／未接続。
  */
 export async function purchasePro() {
-  if (!isAppStoreBuild()) {
+  if (!isAppStoreBuild() || ALLOW_TEST_PRO) {
     unlockPro();
-    return { ok: true, message: '開発用にProを解除しました' };
+    return {
+      ok: true,
+      message: ALLOW_TEST_PRO && isAppStoreBuild()
+        ? 'テスト用にProを解除しました（提出前に ALLOW_TEST_PRO を false に）'
+        : '開発用にProを解除しました',
+    };
   }
   // TODO: StoreKit / RevenueCat
   return {
@@ -89,7 +94,12 @@ export async function purchasePro() {
 }
 
 export async function restorePro() {
-  if (!isAppStoreBuild()) {
+  if (!isAppStoreBuild() || ALLOW_TEST_PRO) {
+    if (isPro()) return { ok: true, message: 'Proは有効です' };
+    if (ALLOW_TEST_PRO) {
+      unlockPro();
+      return { ok: true, message: 'テスト用にProを復元（解除）しました' };
+    }
     return { ok: false, message: '開発ビルドに復元対象はありません' };
   }
   // TODO: StoreKit restore

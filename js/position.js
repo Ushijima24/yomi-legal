@@ -112,8 +112,9 @@ export function formatSeatLabel(id, players) {
 /** よくあるスポットのデフォルト値 */
 export const SITUATION_DEFAULTS = {
   potBase: 100, // 相手ベット前のポット
-  sizeKey: 'half', // ハーフポット
+  sizeKey: 'pot', // ポットベット
   players: 6,
+  tableTend: 'mid', // 卓の傾向
   style: 'mid',
   line: 'or',
 };

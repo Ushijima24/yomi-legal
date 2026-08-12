@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>YOMI — ポーカー確率とアクション</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;550;700&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/scrollAssist.js"></script>
+  </head>
+  <body>
+    <div id="age-gate" class="age-gate" hidden>
+      <div class="age-gate__card">
+        <p class="age-gate__brand">YOMI</p>
+        <h1>年齢確認</h1>
+        <p id="age-gate-text"></p>
+        <p class="age-gate__note">学習・確率計算ツールです。リアルマネーの賭博は扱いません。</p>
+        <div class="age-gate__actions">
+          <button type="button" class="btn btn--accent" id="btn-age-yes">17歳以上です</button>
+          <button type="button" class="btn btn--line" id="btn-age-no">17歳未満です</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ad-interstitial" class="ad-gate" hidden>
+      <div class="ad-gate__card" role="dialog" aria-modal="true" aria-labelledby="ad-title">
+        <p class="ad-gate__badge">広告</p>
+        <h2 id="ad-title">スポンサード</h2>
+        <div class="ad-gate__fake">
+          <p>ここに広告が入ります</p>
+          <p class="ad-gate__fake-sub">（開発用プレースホルダ · 本番は AdMob 等）</p>
+        </div>
+        <div class="ad-gate__actions">
+          <button type="button" class="btn btn--line" id="btn-ad-close">とじる</button>
+          <button type="button" class="btn btn--accent" id="btn-ad-upgrade">広告を消す（Pro）</button>
+        </div>
+        <p class="ad-gate__note">Freeは計算5回ごとに表示 · 結果のあとに出ます</p>
+      </div>
+    </div>
+
+    <div id="paywall" class="paywall" hidden>
+      <div class="paywall__card">
+        <p class="paywall__brand">YOMI Pro</p>
+        <h2>深く読む人向け</h2>
+        <p class="paywall__price" id="paywall-price"></p>
+        <ul id="paywall-features" class="paywall__list"></ul>
+
+        <div class="paywall__actions">
+          <button type="button" class="btn btn--accent" id="btn-unlock-pro">App内課金でProを購入</button>
+          <button type="button" class="btn btn--line" id="btn-restore-pro">購入を復元</button>
+          <button type="button" class="btn btn--line" id="btn-paywall-close">とじる</button>
+        </div>
+
+        <details class="invite-details" id="invite-section">
+          <summary>招待コードをお持ちの方</summary>
+          <div class="invite-box">
+            <label class="field">
+              <span>コード</span>
+              <input id="invite-input" type="text" placeholder="招待コード" autocomplete="off" spellcheck="false" />
+            </label>
+            <button type="button" class="btn btn--line" id="btn-invite-redeem">コードで解除</button>
+            <p id="invite-msg" class="invite-msg" role="status"></p>
+          </div>
+        </details>
+
+        <p class="paywall__note" id="paywall-note">
+          サブスクリプションはAppleのアプリ内課金で処理されます。自動更新の管理・解約は端末のサブスクリプション設定から行えます。
+        </p>
+      </div>
+    </div>
+
+    <div id="app-scroll">
+    <div class="shell">
+      <header class="top">
+        <div class="top__brand">
+          <p class="logo">YOMI</p>
+          <p class="logo__sub">勝率とアクション最適化</p>
+        </div>
+        <div class="top__right">
+          <button type="button" class="plan-pill" id="btn-plan" aria-label="プラン">
+            Free
+          </button>
+          <nav class="tabs" role="tablist">
+            <button type="button" class="tab is-active" role="tab" aria-selected="true" data-tab="equity">
+              勝率計算
+            </button>
+            <button type="button" class="tab" role="tab" aria-selected="false" data-tab="action">
+              アクション診断
+            </button>
+            <button type="button" class="tab" role="tab" aria-selected="false" data-tab="range">
+              レンジ編集
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      <!-- TAB: Equity (既存機能) -->
+      <section id="panel-equity" class="panel is-active" role="tabpanel">
+        <div class="panel__intro">
+          <h1>ハンドを入れて勝率を出す</h1>
+          <p>既知の手札同士のエクイティをシミュレーション</p>
+        </div>
+
+        <div class="rail">
+          <div class="stage">
+            <div class="stage__label">ボード</div>
+            <div id="board" class="card-row"></div>
+            <div class="deal-bar" role="group" aria-label="ランダム生成">
+              <span class="deal-bar__label">ランダム生成：</span>
+              <button type="button" class="btn btn--line" id="btn-eq-deal-flop">フロップ3枚</button>
+              <button type="button" class="btn btn--line" id="btn-eq-deal-turn">ターン</button>
+              <button type="button" class="btn btn--line" id="btn-eq-deal-river">リバー</button>
+            </div>
+            <div id="players" class="player-grid"></div>
+            <div class="toolbar">
+              <button type="button" class="btn btn--accent" id="btn-calculate">計算する</button>
+              <button type="button" class="btn btn--line" id="btn-reset">リセット</button>
+              <button type="button" class="btn btn--line" id="btn-add-player">+ 相手</button>
+              <button type="button" class="btn btn--line" id="btn-remove-player">− 相手</button>
+            </div>
+            <p id="status" class="status" role="status"></p>
+            <p id="ad-progress-hint" class="ad-progress" hidden></p>
+          </div>
+
+          <aside class="deck" aria-label="カード選択">
+            <div class="deck__head">デッキ</div>
+            <div id="picker"></div>
+            <p class="deck__note">スロットを選んでからカードをタップ</p>
+          </aside>
+        </div>
+      </section>
+
+      <!-- TAB: Action advisor -->
+      <section id="panel-action" class="panel" role="tabpanel" hidden>
+        <div class="panel__intro">
+          <h1>今の一手を診断する</h1>
+          <p>
+            ポットオッズからコール／フォールドの目安を出します。Proではポジション・レイズEV・ハンド内訳まで使えます。
+          </p>
+          <p class="free-banner" id="action-free-banner" hidden>
+            いま Free プランです。詳細設定とレイズ計算は
+            <button type="button" class="linkish" id="btn-upgrade-inline">Pro</button>
+            で使えます。
+          </p>
+        </div>
+
+        <div class="advise-layout">
+          <div class="advise-main">
+            <div class="block">
+              <div class="block__title">ボード</div>
+              <div id="adv-board" class="card-row"></div>
+              <div class="deal-bar" role="group" aria-label="ランダム生成">
+                <span class="deal-bar__label">ランダム生成：</span>
+                <button type="button" class="btn btn--line" id="btn-adv-deal-flop">フロップ3枚</button>
+                <button type="button" class="btn btn--line" id="btn-adv-deal-turn">ターン</button>
+                <button type="button" class="btn btn--line" id="btn-adv-deal-river">リバー</button>
+              </div>
+              <p class="field-hint">未入力ならプリフロップとして計算します</p>
+            </div>
+
+            <div class="situation-grid situation-grid--hero-only">
+              <div class="block block--me">
+                <div class="block__title">自分</div>
+                <div class="advise-cards">
+                  <div>
+                    <span class="mini-label">ハンド</span>
+                    <div id="adv-hero" class="card-row"></div>
+                  </div>
+                </div>
+                <div class="fields fields--stack">
+                  <label class="field" data-pro-field>
+                    <span>ポジション <i class="pro-tag">Pro</i></span>
+                    <select id="adv-hero-pos"></select>
+                  </label>
+                  <label class="field field--check" data-pro-field>
+                    <input id="adv-raise" type="checkbox" checked />
+                    <span>レイズ案も計算する <i class="pro-tag">Pro</i></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="block">
+              <div class="block__title">ポット</div>
+              <p class="mini-label">相手のベットサイズ</p>
+              <div id="adv-size-buttons" class="size-buttons" role="group" aria-label="ベットサイズ"></div>
+              <p id="adv-size-summary" class="size-summary"></p>
+
+              <details class="invite-details pot-advanced">
+                <summary>数値を直接指定</summary>
+                <div class="fields" style="margin-top: 0.65rem">
+                  <label class="field">
+                    <span>ポット（相手ベット込み）</span>
+                    <input id="adv-pot" type="number" min="1" step="1" />
+                  </label>
+                  <label class="field">
+                    <span>コール額</span>
+                    <input id="adv-bet" type="number" min="1" step="1" />
+                  </label>
+                </div>
+              </details>
+
+              <p class="field-hint">倍率ボタンは元ポット100基準。金額を変えたいときは「数値を直接指定」へ。</p>
+              <p id="adv-odds-hint" class="odds-hint"></p>
+            </div>
+
+            <details class="block block--villain villain-fold" id="adv-villain-details">
+              <summary class="villain-fold__summary">
+                相手設定 <i class="pro-tag">Pro</i>
+                <span class="villain-fold__hint">タップで開閉</span>
+              </summary>
+              <div class="fields fields--stack villain-fold__body">
+                <label class="field" data-pro-field>
+                  <span>テーブル人数（2〜9） <i class="pro-tag">Pro</i></span>
+                  <input id="adv-players" type="number" min="2" max="9" step="1" value="6" placeholder="6" />
+                </label>
+                <label class="field" data-pro-field>
+                  <span>卓の傾向 <i class="pro-tag">Pro</i></span>
+                  <select id="adv-table-tend">
+                    <option value="auto">一般（普通）</option>
+                    <option value="tight">タイト（入りにくい）</option>
+                    <option value="mid">普通</option>
+                    <option value="loose">ルース（みんな入りやすい）</option>
+                  </select>
+                </label>
+                <p class="field-hint">卓全体の地合い。相手タイプとは別に、推定レンジの広さに効きます。</p>
+                <label class="field" data-pro-field>
+                  <span>使うレンジ <i class="pro-tag">Pro</i></span>
+                  <select id="adv-profile-select">
+                    <option value="">推定レンジ（自動）</option>
+                    <option value="__draft__">編集中のレンジ</option>
+                  </select>
+                </label>
+                <p class="field-hint" id="adv-range-hint">登録・編集は「レンジ編集」タブへ</p>
+                <label class="field" data-pro-field>
+                  <span>ポジション <i class="pro-tag">Pro</i></span>
+                  <select id="adv-villain-pos"></select>
+                </label>
+                <label class="field" data-pro-field>
+                  <span>タイプ <i class="pro-tag">Pro</i></span>
+                  <select id="adv-style">
+                    <option value="auto">一般（スタンダード）</option>
+                    <option value="tight">タイト（狭め）</option>
+                    <option value="mid">スタンダード</option>
+                    <option value="loose">ルース（広め）</option>
+                  </select>
+                </label>
+                <label class="field" data-pro-field>
+                  <span>ライン <i class="pro-tag">Pro</i></span>
+                  <select id="adv-line">
+                    <option value="auto">一般（ORがベット）</option>
+                    <option value="or">オリジナルレイザー (OR)</option>
+                    <option value="3bet">3ベッター</option>
+                    <option value="4bet">4ベッター</option>
+                    <option value="caller">コーラー（フラット）</option>
+                    <option value="unknown">不明</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <div class="toolbar">
+              <button type="button" class="btn btn--accent" id="btn-advise">最適アクションを出す</button>
+              <button type="button" class="btn btn--line" id="btn-adv-reset">カードをクリア</button>
+            </div>
+            <p id="adv-status" class="status" role="status"></p>
+
+            <div id="adv-result" class="verdict" hidden></div>
+          </div>
+
+          <aside class="deck" aria-label="カード選択（診断）">
+            <div class="deck__head">デッキ</div>
+            <div id="adv-picker"></div>
+            <p class="deck__note">スロットを選んでからカードをタップ</p>
+          </aside>
+        </div>
+      </section>
+
+      <!-- TAB: Range editor -->
+      <section id="panel-range" class="panel" role="tabpanel" hidden>
+        <div class="panel__intro">
+          <h1>ハンドレンジ編集</h1>
+          <p>相手の想定ハンドをチェックで作り、名前をつけて保存。アクション診断から呼び出せます。</p>
+          <p class="free-banner" id="range-free-banner" hidden>
+            レンジ編集は Pro 機能です。
+            <button type="button" class="linkish" id="btn-upgrade-range">Proを見る</button>
+          </p>
+        </div>
+
+        <div class="block" id="range-editor-block" data-pro-field>
+          <div class="fields fields--range-meta">
+            <label class="field field--name">
+              <span>相手の名前</span>
+              <input id="adv-villain-name" type="text" placeholder="例: たろう" maxlength="40" />
+            </label>
+            <label class="field">
+              <span>名前の選択</span>
+              <select id="range-profile-select">
+                <option value="">（新規）</option>
+              </select>
+            </label>
+          </div>
+          <div class="block__title" style="margin-top: 1rem">
+            ハンド一覧
+            <span id="range-count" class="range-count">0ハンド</span>
+          </div>
+          <p class="field-hint">
+            タップでオン／オフ。「推定を反映」は、アクション診断で入れた自分のハンド・ボード・相手タイプ／ライン／ベットサイズから、想定レンジを自動でここに呼び出します。
+          </p>
+          <div class="toolbar range-toolbar">
+            <button type="button" class="btn btn--quiet" id="btn-range-all">169件すべて選択</button>
+            <button type="button" class="btn btn--line" id="btn-range-from-estimate">推定を反映</button>
+            <button type="button" class="btn btn--line" id="btn-range-clear">クリア</button>
+            <button type="button" class="btn btn--accent" id="btn-range-save">名前をつけて保存</button>
+            <button type="button" class="btn btn--line" id="btn-range-delete">登録削除</button>
+          </div>
+          <div id="range-grid" class="range-grid range-grid--wide" aria-label="ハンド一覧"></div>
+          <p id="range-status" class="status" role="status"></p>
+        </div>
+      </section>
+
+      <footer class="site-foot">
+        <p id="legal-disclaimer" class="site-foot__disc"></p>
+        <p class="site-foot__links">
+          <a href="./privacy.html">プライバシー</a>
+          <a href="./terms.html">利用規約</a>
+          <a href="./support.html">サポート</a>
+        </p>
+        <p class="site-foot__copy" id="legal-copy"></p>
+      </footer>
+    </div>
+    </div>
+    <script type="module" src="js/app.js?v=20260813e"></script>
+  </body>
+</html>

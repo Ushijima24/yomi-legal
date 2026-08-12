@@ -69,3 +69,36 @@ export function evaluate7(seven) {
   }
   return best;
 }
+
+/** Best 5-card score from 5〜7 cards (flop/turn/river). */
+export function evaluateBest(cards) {
+  if (!cards || cards.length < 5) throw new Error('evaluateBest needs ≥5 cards');
+  if (cards.length === 5) {
+    return score5(
+      cards.map((c) => c.rank),
+      cards.map((c) => c.suit)
+    );
+  }
+  if (cards.length === 7) return evaluate7(cards);
+
+  // 6 cards: C(6,5)
+  let best = -1;
+  const ranks = new Array(5);
+  const suits = new Array(5);
+  for (let skip = 0; skip < 6; skip++) {
+    let k = 0;
+    for (let i = 0; i < 6; i++) {
+      if (i === skip) continue;
+      ranks[k] = cards[i].rank;
+      suits[k] = cards[i].suit;
+      k++;
+    }
+    const s = score5(ranks, suits);
+    if (s > best) best = s;
+  }
+  return best;
+}
+
+export function categoryFromScore(score) {
+  return Math.floor(score / 1e10);
+}

@@ -25,17 +25,37 @@
 
 html {
   color-scheme: dark;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
   font-family: var(--font);
   color: var(--ink);
   background:
     radial-gradient(ellipse 70% 45% at 10% 0%, rgba(61, 222, 168, 0.14), transparent 50%),
     radial-gradient(ellipse 50% 40% at 100% 20%, rgba(255, 176, 32, 0.08), transparent 45%),
     linear-gradient(160deg, var(--bg0), var(--bg1) 55%, #10141d);
+}
+
+/**
+ * ネイティブ contentSize が不安定なため、ページスクロールはここで行う。
+ * （WKWebView の pan は無効化しないこと）
+ */
+#app-scroll {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body::before {
@@ -49,6 +69,7 @@ body::before {
 
 .shell {
   position: relative;
+  z-index: 1;
   width: min(1120px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1.5rem 0 3rem;
@@ -430,16 +451,26 @@ body::before {
 
 .rail,
 .advise-layout {
-  display: grid;
-  grid-template-columns: 1.4fr 0.9fr;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
+}
+
+/* デッキは常に一番上・同じ幅 */
+.rail .deck,
+.advise-layout .deck {
+  order: -1;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 @media (max-width: 860px) {
   .rail,
   .advise-layout {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -665,6 +696,13 @@ body::before {
   border: 1px solid var(--line);
 }
 
+.btn--quiet {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  border: 1px dashed rgba(232, 237, 247, 0.22);
+  font-weight: 600;
+}
+
 .status {
   min-height: 1.3em;
   margin: 0.75rem 0 0;
@@ -679,8 +717,7 @@ body::before {
 .deck {
   padding: 0.95rem;
   animation: in 0.7s 0.1s ease both;
-  position: sticky;
-  top: 0.75rem;
+  position: relative;
 }
 
 .deck__head {
@@ -700,6 +737,13 @@ body::before {
   gap: 0.25rem;
   margin-bottom: 0.3rem;
   overflow-x: auto;
+}
+
+.picker__cards {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .picker__suit {
@@ -748,6 +792,89 @@ body::before {
   cursor: default;
 }
 
+.deal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0.25rem;
+}
+
+.deal-bar__label {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.deal-bar .btn {
+  font-size: 0.72rem;
+  padding: 0.4rem 0.65rem;
+}
+
+/* スマホ: 枠内に13枚収める（このブロックは base より後に置く） */
+@media (max-width: 860px) {
+  .shell {
+    width: calc(100% - 1.25rem);
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .deck {
+    padding: 0.7rem 0.65rem 0.75rem;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .picker__row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .picker__suit {
+    width: 0.95rem;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+  }
+
+  .picker__cards {
+    display: grid;
+    grid-template-columns: repeat(13, minmax(0, 1fr));
+    gap: 0.15rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .picker__card {
+    min-width: 0 !important;
+    width: 100%;
+    height: 1.85rem;
+    padding: 0;
+    font-size: 0.55rem;
+    border-radius: 5px;
+  }
+
+  .field-hint {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
 .advise-main {
   display: flex;
   flex-direction: column;
@@ -761,6 +888,10 @@ body::before {
   gap: 0.85rem;
 }
 
+.situation-grid--hero-only {
+  grid-template-columns: 1fr;
+}
+
 @media (max-width: 720px) {
   .situation-grid {
     grid-template-columns: 1fr;
@@ -769,6 +900,50 @@ body::before {
 
 .block--me {
   border-color: rgba(61, 222, 168, 0.28);
+}
+
+.villain-fold {
+  padding: 0;
+  overflow: hidden;
+}
+
+.villain-fold__summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.95rem 1.05rem;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.villain-fold__summary::-webkit-details-marker {
+  display: none;
+}
+
+.villain-fold__summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.villain-fold[open] > .villain-fold__summary::before {
+  content: "▾";
+}
+
+.villain-fold__hint {
+  margin-left: auto;
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.villain-fold__body {
+  padding: 0 1.05rem 1.05rem;
 }
 
 .block--villain {
@@ -865,8 +1040,14 @@ body::before {
   gap: 0.75rem;
 }
 
+.fields--range-meta {
+  grid-template-columns: 1.55fr 1fr;
+  align-items: end;
+}
+
 @media (max-width: 560px) {
-  .fields {
+  .fields,
+  .fields--range-meta {
     grid-template-columns: 1fr;
   }
 }
@@ -880,6 +1061,7 @@ body::before {
 }
 
 .field input[type="number"],
+.field input[type="text"],
 .field select {
   appearance: none;
   border: 1px solid var(--line);
@@ -890,6 +1072,15 @@ body::before {
   font-size: 1rem;
   font-weight: 600;
   padding: 0.65rem 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.field--name input[type="text"] {
+  font-size: 1.08rem;
+  padding: 0.85rem 0.95rem;
+  min-height: 3rem;
+  border-radius: 14px;
 }
 
 .field--check {
