@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>利用規約 — YOMI</title>
+    <link rel="stylesheet" href="css/legal.css" />
+  </head>
+  <body>
+    <main class="legal">
+      <p><a href="./index.html">← YOMI に戻る</a></p>
+      <h1>利用規約</h1>
+      <p class="meta">最終更新: 2026-08-13 ／ 運営: <span data-publisher></span></p>
+
+      <h2>1. サービス内容</h2>
+      <p>
+        YOMIはテキサスホールデム等の学習を支援する確率・アクション参考ツールです。
+        <strong>リアルマネーの賭博、オンラインカジノ、チップの実際の賭けは提供しません。</strong>
+      </p>
+
+      <h2>2. 免責</h2>
+      <ul>
+        <li>表示される勝率・推奨アクションは参考情報であり、利益を保証しません。</li>
+        <li>通信障害・端末不具合・Apple側課金処理に起因する損害について、法令で認められる範囲で責任を負いません。</li>
+      </ul>
+
+      <h2>3. 有料プラン</h2>
+      <p>
+        Pro機能は App Store のアプリ内課金で提供します。価格・更新・解約は Apple のサブスクリプション設定に従います。
+        返金は Apple のポリシーに準拠します。
+      </p>
+
+      <h2>4. 禁止事項</h2>
+      <ul>
+        <li>法令違反、不正アクセス、リバースエンジニアリングの濫用</li>
+        <li>本アプリをリアルマネー賭博の運営に利用すること</li>
+      </ul>
+
+      <h2>5. 年齢</h2>
+      <p>本アプリは17歳以上を対象とします。対象年齢に満たない方はご利用いただけません。</p>
+
+      <h2>6. お問い合わせ</h2>
+      <p><a data-email href="mailto:"></a></p>
+    </main>
+    <script type="module">
+      import { PUBLISHER } from './js/storeConfig.js';
+      document.querySelectorAll('[data-publisher]').forEach((el) => {
+        el.textContent = PUBLISHER.displayName;
+      });
+      document.querySelectorAll('[data-email]').forEach((el) => {
+        el.textContent = PUBLISHER.supportEmail;
+        el.setAttribute('href', `mailto:${PUBLISHER.supportEmail}`);
+      });
+    </script>
+  </body>
+</html>

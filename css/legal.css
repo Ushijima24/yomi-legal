@@ -1,0 +1,37 @@
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+  background: #12151c;
+  color: #e8edf7;
+  line-height: 1.65;
+}
+
+.legal {
+  width: min(720px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+}
+
+.legal a {
+  color: #3ddea8;
+}
+
+.legal h1 {
+  font-size: 1.75rem;
+  margin: 0.5rem 0;
+}
+
+.legal h2 {
+  font-size: 1.1rem;
+  margin-top: 1.75rem;
+}
+
+.meta {
+  color: #9aa6bd;
+  font-size: 0.9rem;
+}
+
+.big {
+  font-size: 1.15rem;
+  font-weight: 700;
+}

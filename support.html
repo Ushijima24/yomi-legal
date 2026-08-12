@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>サポート — YOMI</title>
+    <link rel="stylesheet" href="css/legal.css" />
+  </head>
+  <body>
+    <main class="legal">
+      <p><a href="./index.html">← YOMI に戻る</a></p>
+      <h1>サポート</h1>
+      <p class="meta">運営: <span data-publisher></span></p>
+
+      <p>不具合・課金・アカウントに関するお問い合わせは、下記メールまでご連絡ください。</p>
+      <p><a data-email class="big" href="mailto:"></a></p>
+
+      <h2>よくあること</h2>
+      <ul>
+        <li>勝率はシミュレーションに基づく参考値です。</li>
+        <li>Proの購入・解約は iPhone の「設定 → Apple ID → サブスクリプション」から行えます。</li>
+        <li>本アプリはリアルマネー賭博を扱いません。</li>
+      </ul>
+
+      <p>
+        <a href="./privacy.html">プライバシーポリシー</a> ／
+        <a href="./terms.html">利用規約</a>
+      </p>
+    </main>
+    <script type="module">
+      import { PUBLISHER } from './js/storeConfig.js';
+      document.querySelectorAll('[data-publisher]').forEach((el) => {
+        el.textContent = PUBLISHER.displayName;
+      });
+      document.querySelectorAll('[data-email]').forEach((el) => {
+        el.textContent = PUBLISHER.supportEmail;
+        el.setAttribute('href', `mailto:${PUBLISHER.supportEmail}`);
+      });
+    </script>
+  </body>
+</html>

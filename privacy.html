@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>プライバシーポリシー — YOMI</title>
+    <link rel="stylesheet" href="css/legal.css" />
+  </head>
+  <body>
+    <main class="legal">
+      <p><a href="./index.html">← YOMI に戻る</a></p>
+      <h1>プライバシーポリシー</h1>
+      <p class="meta">最終更新: 2026-08-13 ／ 運営: <span data-publisher></span></p>
+
+      <p>
+        YOMI（以下「本アプリ」）は、ポーカーの学習・確率計算を目的としたアプリケーションです。
+        本ポリシーは、本アプリにおける情報の取り扱いを説明します。
+      </p>
+
+      <h2>1. 収集する情報</h2>
+      <ul>
+        <li>
+          <strong>端末内データ</strong>：プラン状態、計算回数、招待コード利用履歴、登録した相手レンジなどは、原則としてお客様の端末内（ローカルストレージ）に保存されます。
+        </li>
+        <li>
+          <strong>購入情報</strong>：App Store 経由の課金は Apple が処理します。当方がクレジットカード番号を直接取得することはありません。
+        </li>
+        <li>
+          <strong>広告・解析（導入時）</strong>：広告SDKや解析を導入した場合、端末識別子や利用状況が当該事業者に送信されることがあります。導入時は本ポリシーを更新します。
+        </li>
+      </ul>
+
+      <h2>2. 利用目的</h2>
+      <ul>
+        <li>アプリ機能の提供・改善</li>
+        <li>有料プランの管理</li>
+        <li>お問い合わせへの対応</li>
+      </ul>
+
+      <h2>3. 第三者提供</h2>
+      <p>
+        法令に基づく場合を除き、お客様の個人情報を本人の同意なく第三者に販売・提供しません。
+        課金・広告・解析のために Apple および各SDK提供会社がデータを処理する場合があります。
+      </p>
+
+      <h2>4. データの保管</h2>
+      <p>端末内データはお客様の端末に保存されます。アプリ削除により消える場合があります。</p>
+
+      <h2>5. お問い合わせ</h2>
+      <p>
+        プライバシーに関するお問い合わせ: <a data-email href="mailto:"></a>
+      </p>
+
+      <h2>6. 改定</h2>
+      <p>本ポリシーは必要に応じて改定します。重要な変更がある場合はアプリ内または本ページでお知らせします。</p>
+    </main>
+    <script type="module">
+      import { PUBLISHER } from './js/storeConfig.js';
+      document.querySelectorAll('[data-publisher]').forEach((el) => {
+        el.textContent = PUBLISHER.displayName;
+      });
+      document.querySelectorAll('[data-email]').forEach((el) => {
+        el.textContent = PUBLISHER.supportEmail;
+        el.setAttribute('href', `mailto:${PUBLISHER.supportEmail}`);
+      });
+    </script>
+  </body>
+</html>
