@@ -50,12 +50,14 @@
       <div class="paywall__card">
         <p class="paywall__brand">YOMI Pro</p>
         <h2>深く読む人向け</h2>
+        <p class="paywall__meta" id="paywall-meta">自動更新サブスクリプション · 1か月</p>
         <p class="paywall__price" id="paywall-price"></p>
         <ul id="paywall-features" class="paywall__list"></ul>
 
         <div class="paywall__actions">
           <button type="button" class="btn btn--accent" id="btn-unlock-pro">App内課金でProを購入</button>
           <button type="button" class="btn btn--line" id="btn-restore-pro">購入を復元</button>
+          <button type="button" class="btn btn--line" id="btn-reset-test" hidden>テストデータ初期化</button>
           <button type="button" class="btn btn--line" id="btn-paywall-close">とじる</button>
         </div>
 
@@ -70,6 +72,12 @@
             <p id="invite-msg" class="invite-msg" role="status"></p>
           </div>
         </details>
+
+        <p class="paywall__legal">
+          <a id="paywall-privacy" href="https://ushijima24.github.io/yomi-legal/privacy.html" target="_blank" rel="noopener noreferrer">プライバシーポリシー</a>
+          <span aria-hidden="true">·</span>
+          <a id="paywall-terms" href="https://ushijima24.github.io/yomi-legal/terms.html" target="_blank" rel="noopener noreferrer">利用規約（Terms of Use）</a>
+        </p>
 
         <p class="paywall__note" id="paywall-note">
           サブスクリプションはAppleのアプリ内課金で処理されます。自動更新の管理・解約は端末のサブスクリプション設定から行えます。
@@ -94,6 +102,9 @@
             </button>
             <button type="button" class="tab" role="tab" aria-selected="false" data-tab="action">
               アクション診断
+            </button>
+            <button type="button" class="tab" role="tab" aria-selected="false" data-tab="line">
+              ライン解析
             </button>
             <button type="button" class="tab" role="tab" aria-selected="false" data-tab="range">
               レンジ編集
@@ -202,10 +213,11 @@
                     <input id="adv-pot" type="number" min="1" step="1" />
                   </label>
                   <label class="field">
-                    <span>コール額</span>
+                    <span>このラウンドのコール額</span>
                     <input id="adv-bet" type="number" min="1" step="1" />
                   </label>
                 </div>
+                <p class="field-hint">もっと詳しく入れたいときは Pro の「ライン解析」タブへ。</p>
               </details>
 
               <p class="field-hint">倍率ボタンは元ポット100基準。金額を変えたいときは「数値を直接指定」へ。</p>
@@ -284,6 +296,135 @@
         </div>
       </section>
 
+      <!-- TAB: Line lab (Pro) -->
+      <section id="panel-line" class="panel" role="tabpanel" hidden>
+        <div class="panel__intro">
+          <h1>ライン解析 <i class="pro-tag">Pro</i></h1>
+          <p>
+            テーブルで参加席を選び、プリフロップからリバーまでプレイラインを入れてから診断します。ポットとこのラウンドのベットを分けて扱います。
+          </p>
+          <p class="free-banner" id="line-free-banner" hidden>
+            ライン解析は Pro 機能です。
+            <button type="button" class="linkish" id="btn-upgrade-line">Proを見る</button>
+          </p>
+        </div>
+
+        <div id="line-lab-body" data-pro-field>
+          <div class="advise-layout">
+            <div class="advise-main">
+              <div class="block">
+                <div class="block__title">テーブル</div>
+                <div class="fields">
+                  <label class="field">
+                    <span>人数（2〜9）</span>
+                    <input id="line-players" type="number" min="2" max="9" step="1" value="6" />
+                  </label>
+                  <label class="field">
+                    <span>開始ポット（ブラインド等）</span>
+                    <input id="line-start-pot" type="number" min="0" step="1" value="15" />
+                  </label>
+                  <label class="field">
+                    <span>スタック目安（オールイン用）</span>
+                    <input id="line-stack" type="number" min="1" step="1" value="1000" />
+                  </label>
+                </div>
+                <p class="field-hint">席をタップ: 1回目＝自分、2回目＝参加者、3回目＝外す。参加者が診断対象になります。</p>
+                <div id="line-table" class="line-table" aria-label="テーブル座席"></div>
+                <p id="line-seats-summary" class="size-summary"></p>
+              </div>
+
+              <div class="block">
+                <div class="block__title">ストリート / ボード / ハンド</div>
+                <div id="line-street-tabs" class="line-street-tabs" role="tablist"></div>
+                <div id="line-board" class="card-row" style="margin-top: 0.75rem"></div>
+                <div class="deal-bar" role="group" aria-label="ランダム生成">
+                  <span class="deal-bar__label">ランダム：</span>
+                  <button type="button" class="btn btn--line" id="btn-line-deal-flop">フロップ</button>
+                  <button type="button" class="btn btn--line" id="btn-line-deal-turn">ターン</button>
+                  <button type="button" class="btn btn--line" id="btn-line-deal-river">リバー</button>
+                </div>
+                <div style="margin-top: 0.85rem">
+                  <span class="mini-label">自分のハンド</span>
+                  <div id="line-hero" class="card-row"></div>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block__title">アクションを追加</div>
+                <div class="fields">
+                  <label class="field">
+                    <span>誰が</span>
+                    <select id="line-act-seat"></select>
+                  </label>
+                  <label class="field">
+                    <span>何を</span>
+                    <select id="line-act-kind"></select>
+                  </label>
+                </div>
+                <p class="mini-label">ベット／レイズサイズ（現在ポット基準）</p>
+                <div id="line-size-buttons" class="size-buttons" role="group" aria-label="ベット％"></div>
+                <div class="fields" style="margin-top: 0.65rem">
+                  <label class="field">
+                    <span>金額（レイズ先・ベット額）</span>
+                    <input id="line-act-amount" type="number" min="0" step="1" placeholder="自動 or 直接" />
+                  </label>
+                </div>
+                <div class="toolbar">
+                  <button type="button" class="btn btn--accent" id="btn-line-add">ラインに追加</button>
+                  <button type="button" class="btn btn--line" id="btn-line-undo">ひとつ戻す</button>
+                  <button type="button" class="btn btn--line" id="btn-line-clear">ライン消去</button>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block__title">プレイライン</div>
+                <ol id="line-timeline" class="line-timeline"></ol>
+                <div id="line-spot" class="line-spot"></div>
+              </div>
+
+              <div class="block">
+                <div class="block__title">診断オプション</div>
+                <div class="fields fields--stack">
+                  <label class="field">
+                    <span>相手タイプ</span>
+                    <select id="line-style">
+                      <option value="mid">スタンダード</option>
+                      <option value="tight">タイト</option>
+                      <option value="loose">ルース</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>卓の傾向</span>
+                    <select id="line-table-tend">
+                      <option value="mid">普通</option>
+                      <option value="tight">タイト</option>
+                      <option value="loose">ルース</option>
+                    </select>
+                  </label>
+                  <label class="field field--check">
+                    <input id="line-raise" type="checkbox" checked />
+                    <span>レイズ案も計算する</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="toolbar">
+                <button type="button" class="btn btn--accent" id="btn-line-run">ラインから診断</button>
+                <button type="button" class="btn btn--line" id="btn-line-reset-cards">カードをクリア</button>
+              </div>
+              <p id="line-status" class="status" role="status"></p>
+              <div id="line-result" class="verdict" hidden></div>
+            </div>
+
+            <aside class="deck" aria-label="カード選択（ライン）">
+              <div class="deck__head">デッキ</div>
+              <div id="line-picker"></div>
+              <p class="deck__note">スロットを選んでからカードをタップ</p>
+            </aside>
+          </div>
+        </div>
+      </section>
+
       <!-- TAB: Range editor -->
       <section id="panel-range" class="panel" role="tabpanel" hidden>
         <div class="panel__intro">
@@ -338,6 +479,6 @@
       </footer>
     </div>
     </div>
-    <script type="module" src="js/app.js?v=20260813e"></script>
+    <script type="module" src="js/app.js?v=20260822linelab"></script>
   </body>
 </html>

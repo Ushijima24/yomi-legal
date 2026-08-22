@@ -11,7 +11,7 @@ export const APP = {
   subtitle: '勝率とアクション最適化',
   bundleId: 'com.yuyataga.yomi',
   version: '1.0.0',
-  build: '1',
+  build: '2',
 };
 
 /** 販売元・サポート情報 */
@@ -35,10 +35,10 @@ export const LEGAL = {
 };
 
 /** true なら課金ボタンでローカルPro解除（提出前に必ず false） */
-export const ALLOW_TEST_PRO = true;
+export const ALLOW_TEST_PRO = false;
 
 export const IAP = {
   productId: 'yomi_pro_monthly',
-  priceLabel: '¥480 / 月',
+  priceLabel: '¥320 / 月',
   mockPurchaseInDev: false,
 };

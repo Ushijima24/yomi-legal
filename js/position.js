@@ -121,13 +121,15 @@ export const SITUATION_DEFAULTS = {
 
 /** 一般的なベットサイズ（ベット前ポットに対する倍率） */
 export const BET_SIZES = [
-  { key: 'third', label: '1/3', frac: 1 / 3 },
-  { key: 'half', label: '1/2', frac: 0.5 },
-  { key: 'twoThirds', label: '2/3', frac: 2 / 3 },
-  { key: 'pot', label: 'ポット', frac: 1 },
-  { key: 'over125', label: '1.25x', frac: 1.25 },
-  { key: 'over150', label: 'オーバー', frac: 1.5 },
-  { key: 'over200', label: '2x', frac: 2 },
+  { key: 'third', label: '33%', frac: 1 / 3 },
+  { key: 'half', label: '50%', frac: 0.5 },
+  { key: 'twoThirds', label: '66%', frac: 2 / 3 },
+  { key: 'threeQuarters', label: '75%', frac: 0.75 },
+  { key: 'pot', label: '100%', frac: 1 },
+  { key: 'over125', label: '125%', frac: 1.25 },
+  { key: 'over150', label: '150%', frac: 1.5 },
+  { key: 'over200', label: '200%', frac: 2 },
+  { key: 'over300', label: '300%', frac: 3 },
 ];
 
 export function sizeByKey(key) {

@@ -1,4 +1,4 @@
-import { RANKS, SUITS, SUIT_SYMBOLS, SUIT_COLORS, makeCard, cardCode, cardLabel } from './cards.js';
+import { RANKS, SUITS, SUIT_SYMBOLS, SUIT_COLORS, makeCard, cardCode, cardLabel, fullDeck } from './cards.js';
 import { calculateEquity } from './equity.js';
 import { estimateRange, formatHandList, LINE_LABEL, HAND_STRENGTH, combosFromHands, sortHandsByStrength } from './range.js';
 import { equityVsRange, decideAction, buildRaisePlan } from './decision.js';
@@ -35,8 +35,28 @@ import {
   purchasePro,
   restorePro,
   isAppStoreBuild,
+  resetLocalTestState,
+  syncProFromStore,
+  resolveProPriceLabel,
 } from './compliance.js';
-import { IAP } from './storeConfig.js';
+import { IAP, ALLOW_TEST_PRO } from './storeConfig.js';
+import {
+  LINE_BET_SIZES,
+  STREETS,
+  ACTION_KINDS,
+  createLineState,
+  uid,
+  simulateLine,
+  amountFromPotPercent,
+  amountAllIn,
+  inferLineTag,
+  inferPrimaryVillain,
+  formatActionLine,
+  multiwayNote,
+} from './lineLab.js';
+
+/** ペイウォール表示用（Store価格で上書きされうる） */
+let paywallPriceLabel = PRO_PRICE_LABEL || IAP.priceLabel;
 
 const MAX_PLAYERS = 6;
 const EQUITY_ITERS = 35000;
@@ -1192,6 +1212,622 @@ advEls.style.addEventListener('change', advUpdateOddsHint);
 advEls.line.addEventListener('change', advUpdateOddsHint);
 advEls.tableTend?.addEventListener('change', advUpdateOddsHint);
 
+/* ============================================================
+   TAB: Line lab (Pro) — プレイライン詳細診断
+   ============================================================ */
+
+const lineFreeBanner = document.getElementById('line-free-banner');
+const lineState = createLineState(6);
+lineState.streetUi = 'preflop';
+lineState.sizeKey = '66';
+
+const lineCards = {
+  hero: [null, null],
+  board: [null, null, null, null, null],
+  activeSlot: { type: 'hero', index: 0 },
+  busy: false,
+};
+
+const lineEls = {
+  players: document.getElementById('line-players'),
+  startPot: document.getElementById('line-start-pot'),
+  stack: document.getElementById('line-stack'),
+  table: document.getElementById('line-table'),
+  seatsSummary: document.getElementById('line-seats-summary'),
+  streetTabs: document.getElementById('line-street-tabs'),
+  board: document.getElementById('line-board'),
+  hero: document.getElementById('line-hero'),
+  picker: document.getElementById('line-picker'),
+  actSeat: document.getElementById('line-act-seat'),
+  actKind: document.getElementById('line-act-kind'),
+  actAmount: document.getElementById('line-act-amount'),
+  sizeButtons: document.getElementById('line-size-buttons'),
+  timeline: document.getElementById('line-timeline'),
+  spot: document.getElementById('line-spot'),
+  style: document.getElementById('line-style'),
+  tableTend: document.getElementById('line-table-tend'),
+  raise: document.getElementById('line-raise'),
+  status: document.getElementById('line-status'),
+  result: document.getElementById('line-result'),
+  run: document.getElementById('btn-line-run'),
+};
+
+function lineSetStatus(msg, isError = false) {
+  if (!lineEls.status) return;
+  lineEls.status.textContent = msg || '';
+  lineEls.status.classList.toggle('is-error', !!isError);
+}
+
+function lineUsed() {
+  const ids = new Set();
+  for (const c of lineCards.hero) if (c) ids.add(c.id);
+  for (const c of lineCards.board) if (c) ids.add(c.id);
+  return ids;
+}
+
+function lineActive(type, index) {
+  return lineCards.activeSlot?.type === type && lineCards.activeSlot?.index === index;
+}
+
+function syncLineStateFromInputs() {
+  let players = Number(lineEls.players?.value);
+  if (!Number.isFinite(players)) players = 6;
+  players = Math.min(9, Math.max(2, Math.round(players)));
+  if (players !== lineState.players) {
+    const next = createLineState(players);
+    next.startingPot = lineState.startingPot;
+    next.stackHint = lineState.stackHint;
+    next.streetUi = lineState.streetUi;
+    next.sizeKey = lineState.sizeKey;
+    Object.assign(lineState, next);
+  }
+  lineState.players = players;
+  lineState.startingPot = Math.max(0, Number(lineEls.startPot?.value) || 0);
+  lineState.stackHint = Math.max(1, Number(lineEls.stack?.value) || 1000);
+}
+
+function lineSeatAngle(i, n) {
+  // BTN-ish bottom of oval: start from bottom, go clockwise
+  const start = Math.PI / 2;
+  return start + (i / n) * Math.PI * 2;
+}
+
+function renderLineTable() {
+  if (!lineEls.table) return;
+  syncLineStateFromInputs();
+  const seats = seatsForTable(lineState.players);
+  lineEls.table.innerHTML = seats
+    .map((s, i) => {
+      const ang = lineSeatAngle(i, seats.length);
+      const x = 50 + Math.cos(ang) * 38;
+      const y = 50 + Math.sin(ang) * 34;
+      const isHero = s.id === lineState.heroSeat;
+      const isActive = lineState.activeSeats.includes(s.id);
+      const cls = [
+        'line-seat',
+        isHero ? 'is-hero' : '',
+        isActive && !isHero ? 'is-active' : '',
+        !isActive && !isHero ? 'is-out' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const tag = isHero ? '自分' : isActive ? '参加' : '外';
+      return `<button type="button" class="${cls}" data-seat="${s.id}" style="left:${x}%;top:${y}%">${s.label}<br><span>${tag}</span></button>`;
+    })
+    .join('');
+
+  if (lineEls.seatsSummary) {
+    const hero = formatSeatLabel(lineState.heroSeat, lineState.players);
+    const others = lineState.activeSeats
+      .filter((id) => id !== lineState.heroSeat)
+      .map((id) => formatSeatLabel(id, lineState.players));
+    lineEls.seatsSummary.textContent = `自分 ${hero} · 相手 ${others.join(' / ') || '（未選択）'} · ${lineState.activeSeats.length}人参加`;
+  }
+  fillLineActSeatSelect();
+}
+
+/** 席タップ: 外→参加→自分→外（自分は常に参加） */
+function onLineSeatTap(seatId) {
+  const isHero = seatId === lineState.heroSeat;
+  const isActive = lineState.activeSeats.includes(seatId);
+
+  if (!isActive && !isHero) {
+    lineState.activeSeats = [...lineState.activeSeats, seatId];
+  } else if (isActive && !isHero) {
+    lineState.heroSeat = seatId;
+  } else if (isHero) {
+    // keep at least hero + one villain if possible
+    const others = lineState.activeSeats.filter((id) => id !== seatId);
+    if (others.length) {
+      lineState.heroSeat = others[0];
+      lineState.activeSeats = lineState.activeSeats.filter((id) => id !== seatId);
+      if (!lineState.activeSeats.includes(lineState.heroSeat)) {
+        lineState.activeSeats.push(lineState.heroSeat);
+      }
+    }
+  }
+  if (!lineState.activeSeats.includes(lineState.heroSeat)) {
+    lineState.activeSeats.push(lineState.heroSeat);
+  }
+  renderLineTable();
+  refreshLineSpot();
+}
+
+function fillLineActSeatSelect() {
+  if (!lineEls.actSeat) return;
+  const prev = lineEls.actSeat.value;
+  const opts = lineState.activeSeats
+    .map((id) => {
+      const lab = formatSeatLabel(id, lineState.players);
+      const me = id === lineState.heroSeat ? '（自分）' : '';
+      return `<option value="${id}">${lab}${me}</option>`;
+    })
+    .join('');
+  lineEls.actSeat.innerHTML = opts || '<option value="">席を選んでください</option>';
+  if (prev && lineState.activeSeats.includes(prev)) lineEls.actSeat.value = prev;
+}
+
+function renderLineStreetTabs() {
+  if (!lineEls.streetTabs) return;
+  lineEls.streetTabs.innerHTML = STREETS.map(
+    (s) =>
+      `<button type="button" class="line-street-tab${lineState.streetUi === s.id ? ' is-on' : ''}" data-street="${s.id}">${s.label}</button>`
+  ).join('');
+}
+
+function renderLineSizeButtons() {
+  if (!lineEls.sizeButtons) return;
+  lineEls.sizeButtons.innerHTML =
+    LINE_BET_SIZES.map(
+      (s) =>
+        `<button type="button" class="size-btn${lineState.sizeKey === s.key ? ' is-on' : ''}" data-size="${s.key}">${s.label}</button>`
+    ).join('') +
+    `<button type="button" class="size-btn${lineState.sizeKey === 'allin' ? ' is-on' : ''}" data-size="allin">オールイン</button>`;
+}
+
+function fillLineActKinds() {
+  if (!lineEls.actKind) return;
+  lineEls.actKind.innerHTML = ACTION_KINDS.map((k) => `<option value="${k.id}">${k.label}</option>`).join('');
+}
+
+function suggestLineAmount() {
+  syncLineStateFromInputs();
+  const sim = simulateLine(lineState);
+  const kind = lineEls.actKind?.value || 'bet';
+  const needs = ACTION_KINDS.find((k) => k.id === kind)?.needsAmount;
+  if (!needs && kind !== 'allin') {
+    if (lineEls.actAmount) lineEls.actAmount.value = '';
+    return;
+  }
+  if (lineState.sizeKey === 'allin' || kind === 'allin') {
+    if (lineEls.actAmount) lineEls.actAmount.value = String(amountAllIn(lineState.stackHint, sim.heroStreetPut));
+    return;
+  }
+  const size = LINE_BET_SIZES.find((s) => s.key === lineState.sizeKey) || LINE_BET_SIZES[2];
+  const mode = sim.streetBet > 0 ? 'raise' : 'bet';
+  const amt = amountFromPotPercent(sim.potNow, sim.heroStreetPut, sim.streetBet, size.frac, mode);
+  if (lineEls.actAmount) lineEls.actAmount.value = String(amt);
+}
+
+function refreshLineTimeline() {
+  if (!lineEls.timeline) return;
+  if (!lineState.actions.length) {
+    lineEls.timeline.innerHTML = '<li class="field-hint" style="list-style:none;margin-left:-1.2rem">まだアクションがありません</li>';
+    return;
+  }
+  let lastStreet = '';
+  lineEls.timeline.innerHTML = lineState.actions
+    .map((a) => {
+      const streetLab = STREETS.find((s) => s.id === a.street)?.label || a.street;
+      const tag = a.street !== lastStreet ? `<span class="street-tag">${streetLab}</span>` : '';
+      lastStreet = a.street;
+      return `<li>${tag}${formatActionLine(a, lineState.players)}</li>`;
+    })
+    .join('');
+}
+
+function refreshLineSpot() {
+  if (!lineEls.spot) return;
+  syncLineStateFromInputs();
+  const sim = simulateLine(lineState);
+  const mw = multiwayNote(sim.playersInHand, sim.requiredEquity);
+  lineEls.spot.innerHTML = `
+    <div><strong>ポット</strong>（いま）: ${Math.round(sim.potNow)}</div>
+    <div><strong>このラウンドのベット</strong>（現在額）: ${Math.round(sim.streetBet)}</div>
+    <div><strong>コール額</strong>（自分が追加で出す分）: ${Math.round(sim.callAmount)}</div>
+    <div><strong>必要勝率</strong>: ${sim.callAmount > 0 ? formatPct(sim.requiredEquity) : '—（チェック場面など）'}</div>
+    <div><strong>ハンド内</strong>: ${sim.playersInHand}人${sim.multiway ? '（マルチウェイ）' : ''}</div>
+    ${mw ? `<p class="field-hint" style="margin:0.5rem 0 0">${mw.text}</p>` : ''}
+  `;
+}
+
+function lineRenderSlots() {
+  if (!lineEls.hero || !lineEls.board) return;
+  lineEls.hero.innerHTML = lineCards.hero
+    .map(
+      (c, i) =>
+        `<button type="button" class="slot${lineActive('hero', i) ? ' is-active' : ''}" data-type="hero" data-index="${i}">${renderCardFace(c, '穴札')}</button>`
+    )
+    .join('');
+  const labels = ['F', '', '', 'T', 'R'];
+  lineEls.board.innerHTML = lineCards.board
+    .map(
+      (c, i) =>
+        `<button type="button" class="slot${lineActive('board', i) ? ' is-active' : ''}" data-type="board" data-index="${i}">
+          ${renderCardFace(c, labels[i] || '')}
+          <span class="slot__label">${['フロップ', '', '', 'ターン', 'リバー'][i] || '&nbsp;'}</span>
+        </button>`
+    )
+    .join('');
+  renderPicker(lineEls.picker, lineUsed(), linePlace);
+}
+
+function lineAdvance() {
+  const a = lineCards.activeSlot;
+  if (!a) return;
+  if (a.type === 'hero') {
+    lineCards.activeSlot = a.index === 0 ? { type: 'hero', index: 1 } : { type: 'board', index: 0 };
+    return;
+  }
+  lineCards.activeSlot = a.index < 4 ? { type: 'board', index: a.index + 1 } : null;
+}
+
+function linePlace(card) {
+  if (!lineCards.activeSlot) {
+    for (let i = 0; i < 2; i++) {
+      if (!lineCards.hero[i]) {
+        lineCards.activeSlot = { type: 'hero', index: i };
+        break;
+      }
+    }
+    if (!lineCards.activeSlot) {
+      for (let i = 0; i < 5; i++) {
+        if (!lineCards.board[i]) {
+          lineCards.activeSlot = { type: 'board', index: i };
+          break;
+        }
+      }
+    }
+  }
+  if (!lineCards.activeSlot) return;
+  if (lineCards.activeSlot.type === 'hero') lineCards.hero[lineCards.activeSlot.index] = card;
+  else lineCards.board[lineCards.activeSlot.index] = card;
+  lineAdvance();
+  lineRenderSlots();
+}
+
+function lineAddAction() {
+  if (!isPro()) {
+    openPaywall();
+    return;
+  }
+  syncLineStateFromInputs();
+  const seat = lineEls.actSeat?.value;
+  const kind = lineEls.actKind?.value;
+  if (!seat || !kind) {
+    lineSetStatus('席とアクションを選んでください', true);
+    return;
+  }
+  if (!lineState.activeSeats.includes(seat)) {
+    lineSetStatus('参加席から選んでください', true);
+    return;
+  }
+  const needs = ACTION_KINDS.find((k) => k.id === kind)?.needsAmount;
+  let amount = null;
+  let sizeKey = null;
+  if (needs || kind === 'allin') {
+    amount = Number(lineEls.actAmount?.value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      suggestLineAmount();
+      amount = Number(lineEls.actAmount?.value);
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      lineSetStatus('金額を入力するかサイズを選んでください', true);
+      return;
+    }
+    sizeKey = lineState.sizeKey;
+  }
+  lineState.actions.push({
+    id: uid(),
+    street: lineState.streetUi,
+    seat,
+    kind: kind === 'allin' ? 'allin' : kind,
+    amount,
+    sizeKey,
+  });
+  refreshLineTimeline();
+  refreshLineSpot();
+  suggestLineAmount();
+  lineSetStatus('アクションを追加しました');
+}
+
+async function lineRun() {
+  if (!isPro()) {
+    openPaywall();
+    return;
+  }
+  if (lineCards.busy) return;
+  syncLineStateFromInputs();
+  if (!lineCards.hero[0] || !lineCards.hero[1]) {
+    lineSetStatus('自分のハンドを2枚入れてください', true);
+    return;
+  }
+  let boardCount = 0;
+  for (let i = 0; i < 5; i++) if (lineCards.board[i]) boardCount = i + 1;
+  for (let i = 0; i < boardCount; i++) {
+    if (!lineCards.board[i]) {
+      lineSetStatus('ボードは左から順に入れてください', true);
+      return;
+    }
+  }
+  if (boardCount === 1 || boardCount === 2) {
+    lineSetStatus('フロップは3枚、または未公開にしてください', true);
+    return;
+  }
+
+  const sim = simulateLine(lineState);
+  const pot = Math.max(1, sim.potNow);
+  const bet = Math.max(0, sim.callAmount);
+  if (bet <= 0) {
+    lineSetStatus('いまはコール額0です。相手のベット／レイズをラインに追加してから診断してください', true);
+    return;
+  }
+
+  const heroPos = lineState.heroSeat;
+  const villainPos = inferPrimaryVillain(lineState) || defaultVillainPos(lineState.players);
+  const lineTag = inferLineTag(lineState);
+  const style = lineEls.style?.value || 'mid';
+  const tableTend = lineEls.tableTend?.value || 'mid';
+  const players = Math.max(2, sim.playersInHand);
+  const wantRaise = !!lineEls.raise?.checked;
+  const potBefore = Math.max(1, pot - bet);
+  const betFraction = bet / potBefore;
+  const dead = lineUsed();
+  const posAdj = positionalEquityAdjust(heroPos, villainPos, lineState.players);
+
+  lineCards.busy = true;
+  if (lineEls.run) lineEls.run.disabled = true;
+  lineSetStatus('ラインからレンジ推定と勝率を計算中…');
+  if (lineEls.result) lineEls.result.hidden = true;
+  await new Promise((r) => setTimeout(r, 30));
+
+  try {
+    const range = estimateRange(style, betFraction, dead, lineTag, {
+      posWidthMult: villainPosWidthMult(villainPos, lineState.players),
+      posStrengthBias: villainPosStrengthBias(villainPos, lineState.players),
+      heroIP: posAdj.heroIP,
+      posNote: `${players}人残 ${formatSeatLabel(villainPos, lineState.players)}`,
+      players: lineState.players,
+      villainPos,
+      betFraction,
+      tableTend,
+    }, lineCards.board.slice());
+
+    const eq = equityVsRange(lineCards.hero, lineCards.board, range.combos, RANGE_ITERS);
+    let equity = clamp01(eq.equity + posAdj.adj);
+
+    let raisePlan = null;
+    let decision;
+    if (wantRaise) {
+      raisePlan = buildRaisePlan(style, bet, pot, range.combos, lineTag);
+      const eqCall = equityVsRange(lineCards.hero, lineCards.board, raisePlan.callCombos, Math.min(12000, RANGE_ITERS));
+      decision = decideAction({
+        pot,
+        bet,
+        equity,
+        raiseTo: raisePlan.raiseTo,
+        foldEquity: raisePlan.foldEquity,
+        equityWhenCalled: clamp01(eqCall.equity + posAdj.adj * 0.5),
+      });
+    } else {
+      decision = decideAction({ pot, bet, equity });
+    }
+
+    const groups = groupHands(eq.byHand);
+    const mw = multiwayNote(sim.playersInHand, decision.requiredEquity);
+    const lineText = lineState.actions.map((a) => formatActionLine(a, lineState.players)).join(' → ');
+    const actionJP = { fold: 'フォールド', call: 'コール', raise: 'レイズ' }[decision.best.action];
+    const raiseLine = decision.raiseNote
+      ? `レイズ案: ${decision.raiseNote.raiseTo} まで（FE ${formatPct(decision.raiseNote.foldEquity)}）`
+      : '';
+
+    lineEls.result.hidden = false;
+    lineEls.result.innerHTML = `
+      <p class="verdict__action" data-action="${decision.best.action}">${actionJP}</p>
+      <p class="verdict__sub">
+        ポット ${Math.round(pot)} · コール ${Math.round(bet)} · ${sim.playersInHand}人残${sim.multiway ? '（マルチ）' : ''}<br />
+        必要勝率 ${formatPct(decision.requiredEquity)} に対し勝率 ${formatPct(equity)}（差 ${formatPct(decision.edge)}）· ${posAdj.label}<br />
+        ライン: ${lineText || '（なし）'}<br />
+        相手 ${formatSeatLabel(villainPos, lineState.players)} · ${LINE_LABEL[lineTag] || lineTag} · ${range.label}
+        ${mw ? `<br />${mw.text}` : ''}
+        ${raiseLine ? `<br />${raiseLine}` : ''}
+      </p>
+      <div class="metrics">
+        <div class="metric"><b class="metric__win">${formatPct(equity)}</b><span>勝率</span></div>
+        <div class="metric"><b>${formatPct(decision.requiredEquity)}</b><span>必要勝率</span></div>
+        <div class="metric"><b>${eq.comboCount}</b><span>相手コンボ</span></div>
+        <div class="metric"><b>${sim.playersInHand}</b><span>残人数</span></div>
+      </div>
+      <ul class="ev-list">
+        ${decision.options
+          .map(
+            (o) =>
+              `<li class="${o.action === decision.best.action ? 'is-best' : ''}"><span>${o.label}</span><strong>EV ${formatEV(o.ev)}</strong></li>`
+          )
+          .join('')}
+      </ul>
+      <div class="hand-groups">
+        <div>
+          <h3 class="tag-ahead">有利 · ${groups.ahead.length}</h3>
+          <p>${groups.ahead.length ? formatHandList(groups.ahead.slice(0, 24)) : '—'}</p>
+        </div>
+        <div>
+          <h3 class="tag-flip">互角 · ${groups.flip.length}</h3>
+          <p>${groups.flip.length ? formatHandList(groups.flip.slice(0, 24)) : '—'}</p>
+        </div>
+        <div>
+          <h3 class="tag-behind">不利 · ${groups.behind.length}</h3>
+          <p>${groups.behind.length ? formatHandList(groups.behind.slice(0, 24)) : '—'}</p>
+        </div>
+      </div>
+    `;
+    lineSetStatus('診断完了');
+    void maybeShowAdAfterCalc().then(() => updateAdHint());
+  } catch (err) {
+    lineSetStatus(err?.message || String(err), true);
+  } finally {
+    lineCards.busy = false;
+    if (lineEls.run) lineEls.run.disabled = false;
+  }
+}
+
+function lineResetCards() {
+  lineCards.hero = [null, null];
+  lineCards.board = [null, null, null, null, null];
+  lineCards.activeSlot = { type: 'hero', index: 0 };
+  if (lineEls.result) lineEls.result.hidden = true;
+  lineSetStatus('カードをクリアしました');
+  lineRenderSlots();
+}
+
+function initLineLab() {
+  if (!lineEls.table) return;
+  fillLineActKinds();
+  renderLineStreetTabs();
+  renderLineSizeButtons();
+  renderLineTable();
+  refreshLineTimeline();
+  refreshLineSpot();
+  suggestLineAmount();
+  lineRenderSlots();
+
+  lineEls.table.addEventListener('click', (e) => {
+    if (!isPro()) {
+      openPaywall();
+      return;
+    }
+    const btn = e.target.closest('.line-seat');
+    if (!btn) return;
+    onLineSeatTap(btn.dataset.seat);
+  });
+
+  lineEls.streetTabs?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-street]');
+    if (!btn) return;
+    lineState.streetUi = btn.dataset.street;
+    renderLineStreetTabs();
+    suggestLineAmount();
+  });
+
+  lineEls.sizeButtons?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-size]');
+    if (!btn) return;
+    lineState.sizeKey = btn.dataset.size;
+    if (btn.dataset.size === 'allin') lineEls.actKind.value = 'allin';
+    renderLineSizeButtons();
+    suggestLineAmount();
+  });
+
+  lineEls.actKind?.addEventListener('change', suggestLineAmount);
+  lineEls.players?.addEventListener('change', () => {
+    renderLineTable();
+    refreshLineSpot();
+    suggestLineAmount();
+  });
+  lineEls.startPot?.addEventListener('input', () => {
+    refreshLineSpot();
+    suggestLineAmount();
+  });
+  lineEls.stack?.addEventListener('input', suggestLineAmount);
+
+  document.getElementById('btn-line-add')?.addEventListener('click', lineAddAction);
+  document.getElementById('btn-line-undo')?.addEventListener('click', () => {
+    lineState.actions.pop();
+    refreshLineTimeline();
+    refreshLineSpot();
+    suggestLineAmount();
+  });
+  document.getElementById('btn-line-clear')?.addEventListener('click', () => {
+    lineState.actions = [];
+    refreshLineTimeline();
+    refreshLineSpot();
+  });
+  lineEls.run?.addEventListener('click', () => void lineRun());
+  document.getElementById('btn-line-reset-cards')?.addEventListener('click', lineResetCards);
+  document.getElementById('btn-upgrade-line')?.addEventListener('click', openPaywall);
+
+  lineEls.hero?.addEventListener('click', (e) => {
+    const slot = e.target.closest('.slot');
+    if (!slot) return;
+    const index = Number(slot.dataset.index);
+    if (lineCards.hero[index]) {
+      lineCards.hero[index] = null;
+      lineCards.activeSlot = { type: 'hero', index };
+    } else lineCards.activeSlot = { type: 'hero', index };
+    lineRenderSlots();
+  });
+  lineEls.board?.addEventListener('click', (e) => {
+    const slot = e.target.closest('.slot');
+    if (!slot) return;
+    const index = Number(slot.dataset.index);
+    if (lineCards.board[index]) {
+      lineCards.board[index] = null;
+      lineCards.activeSlot = { type: 'board', index };
+    } else lineCards.activeSlot = { type: 'board', index };
+    lineRenderSlots();
+  });
+
+  document.getElementById('btn-line-deal-flop')?.addEventListener('click', () => {
+    const dead = lineUsed();
+    const deck = fullDeck().filter((c) => !dead.has(c.id));
+    shuffleInPlace(deck);
+    if (deck.length < 3) return lineSetStatus('カード不足', true);
+    lineCards.board[0] = deck[0];
+    lineCards.board[1] = deck[1];
+    lineCards.board[2] = deck[2];
+    lineCards.activeSlot = { type: 'board', index: 3 };
+    lineState.streetUi = 'flop';
+    renderLineStreetTabs();
+    lineRenderSlots();
+  });
+  document.getElementById('btn-line-deal-turn')?.addEventListener('click', () => {
+    if (![lineCards.board[0], lineCards.board[1], lineCards.board[2]].every(Boolean)) {
+      return lineSetStatus('先にフロップを入れてください', true);
+    }
+    const dead = lineUsed();
+    const deck = fullDeck().filter((c) => !dead.has(c.id));
+    if (!deck.length) return lineSetStatus('カード不足', true);
+    lineCards.board[3] = deck[(Math.random() * deck.length) | 0];
+    lineCards.activeSlot = { type: 'board', index: 4 };
+    lineState.streetUi = 'turn';
+    renderLineStreetTabs();
+    lineRenderSlots();
+  });
+  document.getElementById('btn-line-deal-river')?.addEventListener('click', () => {
+    if (!lineCards.board[3]) return lineSetStatus('先にターンを入れてください', true);
+    const dead = lineUsed();
+    const deck = fullDeck().filter((c) => !dead.has(c.id));
+    if (!deck.length) return lineSetStatus('カード不足', true);
+    lineCards.board[4] = deck[(Math.random() * deck.length) | 0];
+    lineCards.activeSlot = null;
+    lineState.streetUi = 'river';
+    renderLineStreetTabs();
+    lineRenderSlots();
+  });
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const t = arr[i];
+    arr[i] = arr[j];
+    arr[j] = t;
+  }
+  return arr;
+}
+
+/* ---- premium / paywall (continued) ---- */
+
 advEls.rangeGrid?.addEventListener('click', (e) => {
   if (!isPro()) {
     openPaywall();
@@ -1311,7 +1947,9 @@ const freeBanner = document.getElementById('action-free-banner');
 const rangeFreeBanner = document.getElementById('range-free-banner');
 
 function openPaywall() {
-  paywallPrice.textContent = PRO_PRICE_LABEL || IAP.priceLabel;
+  const meta = document.getElementById('paywall-meta');
+  if (meta) meta.textContent = 'YOMI Pro · 自動更新サブスクリプション · 1か月';
+  paywallPrice.textContent = paywallPriceLabel || '¥320 / 月';
   paywallFeatures.innerHTML = PRO_FEATURES.map((f) => `<li>${f}</li>`).join('');
   const unlockBtn = document.getElementById('btn-unlock-pro');
   const restoreBtn = document.getElementById('btn-restore-pro');
@@ -1333,11 +1971,24 @@ function openPaywall() {
     };
   }
 
+  const resetTestBtn = document.getElementById('btn-reset-test');
+  if (resetTestBtn) {
+    resetTestBtn.hidden = !ALLOW_TEST_PRO;
+    resetTestBtn.onclick = () => {
+      if (!ALLOW_TEST_PRO) return;
+      if (!confirm('Pro・年齢確認・広告カウントを初期化して再読み込みします。よろしいですか？')) return;
+      resetLocalTestState();
+      location.reload();
+    };
+  }
+
   if (isPro()) {
-    unlockBtn.textContent = isAppStoreBuild() ? 'Pro利用中' : 'Freeに戻す';
-    unlockBtn.disabled = isAppStoreBuild();
+    // 審査ビルドでも ALLOW_TEST_PRO 中は Free に戻せる
+    const canDowngrade = !isAppStoreBuild() || ALLOW_TEST_PRO;
+    unlockBtn.textContent = canDowngrade ? 'Freeに戻す（テスト）' : 'Pro利用中';
+    unlockBtn.disabled = !canDowngrade;
     unlockBtn.onclick = () => {
-      if (isAppStoreBuild()) return;
+      if (!canDowngrade) return;
       clearInviteState();
       downgradeToFree();
       closePaywall();
@@ -1383,6 +2034,7 @@ function applyPlanUI() {
   planBtn.classList.toggle('is-pro', pro);
   if (freeBanner) freeBanner.hidden = pro;
   if (rangeFreeBanner) rangeFreeBanner.hidden = pro;
+  if (lineFreeBanner) lineFreeBanner.hidden = pro;
 
   const villainDetails = document.getElementById('adv-villain-details');
   if (villainDetails) {
@@ -1460,4 +2112,10 @@ fillPosSelects(false);
 applyPublisherUi();
 applyPlanUI();
 advReset();
-void setupAgeGate();
+initLineLab();
+void (async () => {
+  await setupAgeGate();
+  const synced = await syncProFromStore();
+  if (synced?.synced) applyPlanUI();
+  paywallPriceLabel = (await resolveProPriceLabel()) || paywallPriceLabel;
+})();

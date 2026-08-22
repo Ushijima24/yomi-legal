@@ -1,5 +1,12 @@
 import { APP_STORE_BUILD, APP, PUBLISHER, LEGAL, IAP, ALLOW_TEST_PRO } from './storeConfig.js';
-import { unlockPro, isPro, setPlan, PLAN } from './premium.js';
+import { unlockPro, isPro, setPlan, PLAN, downgradeToFree } from './premium.js';
+import {
+  purchaseSubscription,
+  restoreSubscription,
+  queryProEntitlement,
+  fetchStorePriceLabel,
+  isNativeIapAvailable,
+} from './iap.js';
 
 const AGE_KEY = 'yomi_age_ok_v1';
 
@@ -25,7 +32,16 @@ export function applyPublisherUi() {
   const note = document.getElementById('paywall-note');
   if (note && isAppStoreBuild()) {
     note.textContent =
-      'サブスクリプションはAppleのアプリ内課金で処理されます。自動更新の管理・解約はiPhoneの設定→サブスクリプションから行えます。リアルマネー賭博は扱いません。';
+      'サブスクリプション名: YOMI Pro。期間: 1か月。価格は上記表示（自動更新）。管理・解約はiPhoneの設定→Apple ID→サブスクリプション。リアルマネー賭博は扱いません。';
+  }
+
+  const privacy = document.getElementById('paywall-privacy');
+  if (privacy) {
+    privacy.href = PUBLISHER.privacyUrl;
+  }
+  const terms = document.getElementById('paywall-terms');
+  if (terms) {
+    terms.href = PUBLISHER.termsUrl;
   }
 }
 
@@ -74,7 +90,7 @@ export function redeemInviteForStore(raw) {
 }
 
 /**
- * 購入（本番は StoreKit）。審査用ビルドでは説明のみ／未接続。
+ * 購入（本番は StoreKit / @capgo/native-purchases）
  */
 export async function purchasePro() {
   if (!isAppStoreBuild() || ALLOW_TEST_PRO) {
@@ -86,11 +102,10 @@ export async function purchasePro() {
         : '開発用にProを解除しました',
     };
   }
-  // TODO: StoreKit / RevenueCat
-  return {
-    ok: false,
-    message: `App内課金（${IAP.productId}）はXcode接続後に有効になります。価格 ${IAP.priceLabel}`,
-  };
+
+  const result = await purchaseSubscription();
+  if (result.ok) unlockPro();
+  return result;
 }
 
 export async function restorePro() {
@@ -102,8 +117,60 @@ export async function restorePro() {
     }
     return { ok: false, message: '開発ビルドに復元対象はありません' };
   }
-  // TODO: StoreKit restore
-  return { ok: false, message: '購入の復元はStoreKit接続後に利用できます' };
+
+  const result = await restoreSubscription();
+  if (result.ok) unlockPro();
+  return result;
 }
 
-export { APP, PUBLISHER, LEGAL, IAP, APP_STORE_BUILD };
+/**
+ * 起動時などに StoreKit の購読状態をローカルプランへ反映
+ */
+export async function syncProFromStore() {
+  if (!isAppStoreBuild() || ALLOW_TEST_PRO || !isNativeIapAvailable()) {
+    return { synced: false };
+  }
+
+  const entitlement = await queryProEntitlement();
+  if (!entitlement.ok) return { synced: false, ...entitlement };
+
+  if (entitlement.active) {
+    unlockPro();
+  } else if (isPro()) {
+    // 期限切れ・未購読なら Free に戻す（ローカルだけの Pro を残さない）
+    downgradeToFree();
+  }
+  return { synced: true, active: entitlement.active };
+}
+
+/** ペイウォール表示用。Store 価格があれば優先 */
+export async function resolveProPriceLabel() {
+  if (!isAppStoreBuild() || ALLOW_TEST_PRO || !isNativeIapAvailable()) {
+    return IAP.priceLabel;
+  }
+  const store = await fetchStorePriceLabel();
+  return store || IAP.priceLabel;
+}
+
+export function clearAgeGate() {
+  try {
+    localStorage.removeItem(AGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * テスト用: Pro・年齢確認・計算回数などを初期化
+ */
+export function resetLocalTestState() {
+  clearAgeGate();
+  setPlan(PLAN.free);
+  try {
+    localStorage.removeItem('yomi_redeemed_code_v1');
+    localStorage.removeItem('yomi_calc_count_v1');
+    localStorage.removeItem('yomi_last_ad_at_v1');
+  } catch {
+    /* ignore */
+  }
+}
